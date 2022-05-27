@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html style="padding:0;margin:0;">
+	<body style="padding:0;margin:0;overflow: hidden;">
+		<canvas id="screen"></canvas>
+		<script>
+			canvascolor = "rgba(19, 23, 26, 1)";
+			var canvas = document.getElementById('screen');
+			var ctx = canvas.getContext('2d');
+
+			items = []
+
+			var click = false
+			var mouseX = 0;
+			var mouseY = 0;
+			var pause = false;
+			var timeSwitch;
+			var trace = false;
+
+			canvasResize();
+
+
+			// canvas.addEventListener('mousedown', onClick);
+			// canvas.addEventListener("mouseup", onRelease);
+			// canvas.addEventListener("wheel", scroll)
+			// canvas.addEventListener('mouseleave', onMouseLeave);
+			// canvas.addEventListener('mousemove', onMouseMove);
+			document.addEventListener('keydown', (event) => {
+			  const keyName = event.key;
+				switch(keyName){
+					case 'Control':
+						return;
+					case 'm':
+						masses = [];
+						for(let each of items){
+							masses.push(Math.round(100*each.m)/100);
+						}
+						masses.sort();
+						console.log(masses);
+						return;
+					case 'b':
+						if(timeSwitch){
+							timeFac *= 10;
+						} else{
+							timeFac /= 10;
+						}
+						timeSwitch = !timeSwitch;
+						return;
+					case ' ':
+						pause = !pause;
+						return;
+					case "1":
+						trace = !trace;
+						return;
+				}
+			}, false);
+
+
+			// function onClick(event){
+			// 	click = true;
+			// }
+
+			// function onRelease(event){
+			// 	click = false;
+			// }
+
+			// function onMouseMove(event){
+			//   mouseX = event.pageX;
+			//   mouseY = event.pageY;
+			// }
+
+			// function onMouseLeave(event){
+			// 	click = false;
+			// }
+			const frameTicks = 4;
+			const scale = 10000000;  //more equals more distance
+			var timeFac = (0.0002*1.5/Math.log(scale))/frameTicks;
+			const threshold = 1;
+			const gConst = 10*scale;
+			const maxG = 100000*gConst*0.5/scale;
+			const maxGsquare = maxG/Math.sqrt(2);
+			const sizeFac = 1;
+			const lineW = 1.5;
+			const maxVo = 1/timeFac;
+
+			class Item{
+				constructor(x, y, m = 0){
+					this.m = m;
+					if(this.m == 0){
+						this.m = 1.1*Math.random()+0.1;
+						this.m = 3*this.m*this.m*this.m*this.m;
+					}
+					this.r = 10*Math.cbrt(this.m);
+					this.x = x;
+					this.y = y;
+					this.vx = maxVo*(Math.random()-1/2);
+					this.vy = maxVo*(Math.random()-1/2);
+					this.gx = 0;
+					this.gy = 0;
+					let seed = 2*Math.PI*Math.random();
+					this.color = "rgba("+(75*Math.sin(seed)+180)+","+(75*Math.sin(seed + 2*Math.PI/3)+180)+","+(75*Math.sin(seed + 4*Math.PI/3)+180)+",1)";
+					this.tooMuch = false;
+					this.shiftx = 0;
+					this.shifty = 0;
+					this.colliding = false;
+					this.newvx = 0;
+					this.newvy = 0;
+
+				}
+				calc(){
+					// for(let i = 0; i < items.length; i++){
+					this.colliding = false;
+					this.tooMuch = false;
+					this.gx = 0;
+					this.gy = 0;
+					this.shiftx = 0;
+					this.shifty = 0;
+					for(let that of items){
+						if(this == that){
+							continue;
+						}
+						let dx = (this.x-that.x)*(this.x-that.x);
+						let dy = (this.y-that.y)*(this.y-that.y);
+						let denom = (dx + dy)*(dx + dy)
+						this.gx += that.m*2*(this.x-that.x)/denom;
+						this.gy += that.m*2*(this.y-that.y)/denom;
+					}
+					this.gx*=gConst;
+					this.gy*=gConst;
+					if(Math.abs(this.gx) >= maxGsquare || Math.abs(this.gy) >= maxGsquare){ //check inscribed square first
+						let gxy = Math.sqrt(this.gx*this.gx+this.gy*this.gy);
+						if(gxy > maxG){ //check speed
+							this.gx*=maxG/gxy;
+							this.gy*=maxG/gxy;
+							this.tooMuch = true;
+						}
+					}
+
+					for(let that of items){
+						if(this == that){
+							continue;
+						}
+						let dx = this.x-that.x;
+						let dy = this.y-that.y;
+						let rsum = this.r+that.r;
+						if(Math.abs(dx) > rsum && Math.abs(dy) > rsum){ // square check
+							continue;
+						}
+						let dist = Math.sqrt(dx*dx + dy*dy);
+						if(dist > rsum){ 
+							continue;
+						}
+						this.colliding = true;
+						//collision !!
+						let overlap = rsum - dist;
+						// console.log(rsum, dist, overlap);
+						this.shiftx=dx*overlap/dist;
+						this.shifty=dy*overlap/dist;
+
+						// this.newvx=(this.m*this.vx + that.m*(that.vx + that.vx - this.vx))/(this.m+that.m);
+						// this.newvy=(this.m*this.vy + that.m*(that.vy + that.vy - this.vy))/(this.m+that.m);
+
+						// find unit vector of collision
+						let ux = that.x - this.x;
+						let uy = that.y - this.y;
+						let ul = Math.sqrt(ux*ux + uy*uy)
+						ux /= ul;
+						uy /= ul;
+						// project velocities on the collision vector 
+						let comp1 = ux*this.vx + uy*this.vy;
+						let comp2 = ux*that.vx + uy*that.vy;
+						// perform a 1-d collision to find exit velocities parallel to collision vector
+						let exit1 = (this.m*comp1 + that.m*(comp2 + comp2 - comp1))/(this.m+that.m);
+						// scale collision unit vector by the above calculation
+						let scalex = exit1 * ux;
+						let scaley = exit1 * uy;
+						// combine components: exit parallel to collision & original velo ortho to collision
+						this.newvx = this.vx - ux*comp1 + scalex;
+						this.newvy = this.vy - uy*comp1 + scaley;
+
+					}
+					// this.vx*=0.999;
+					// this.vy*=0.999;
+				}
+				update(){
+					if(this.colliding){
+						this.vx = this.newvx;
+						this.vy = this.newvy;
+					}
+
+					let thisthresh = threshold+this.r;
+					let overx = Math.abs(this.x-canvas.width/2) - (canvas.width/2-thisthresh);
+					let overy = Math.abs(this.y-canvas.height/2) - (canvas.height/2-thisthresh);
+					if(overx > 0){
+						// this.gx += Math.sign(this.x-canvas.width/2)/500000;
+						this.vx*=-0.8;
+						if(this.vx < 0){
+							this.x = canvas.width-thisthresh;
+						} else{
+							this.x = thisthresh;
+						}
+					}
+					if(overy > 0){
+						// this.gy += Math.sign(this.y-canvas.height/2)/500000;
+						this.vy*=-0.8;
+						if(this.vy < 0){
+							this.y = canvas.height-thisthresh;
+						} else{
+							this.y = thisthresh;
+						}
+					}
+					if(this.colliding){
+						this.vx-=0.5*this.gx;
+						this.vy-=0.5*this.gy;
+					} else{
+						this.vx-=this.gx;
+						this.vy-=this.gy;
+					}
+					this.x+=this.shiftx;
+					this.y+=this.shifty;
+					if(trace){
+						ctx.lineCap = "round";
+						ctx.strokeStyle = this.color;
+						ctx.lineWidth = this.r*Math.sqrt(this.vx*this.vx+this.vy*this.vy)/200000;
+						ctx.beginPath();
+						ctx.moveTo(this.x, this.y);
+						ctx.lineTo(this.x + this.vx*timeFac, this.y+this.vy*timeFac);
+						ctx.stroke();
+					}
+					this.x+=this.vx*timeFac;
+					this.y+=this.vy*timeFac;
+				}
+				draw(){
+					ctx.lineWidth = lineW;
+					ctx.strokeStyle = this.color;
+					ctx.fillStyle = this.color.slice(0,-2)+"0.3)";
+
+					ctx.beginPath();
+					ctx.arc(this.x, this.y, this.r*sizeFac, 0, 2 * Math.PI);
+					// if(this.tooMuch){
+					// 	ctx.fillStyle = this.color.slice(0,-2)+"0.5)";
+					// 	ctx.fill();
+					// }
+					// if(this.colliding){
+					// 	ctx.fillStyle = "white";
+					// 	// ctx.fill();
+					// }
+					if(trace){
+						ctx.fillStyle=this.color;
+					}
+					ctx.fill();
+					ctx.stroke();
+					
+
+					// ctx.beginPath();
+					// let gxy = Math.sqrt(this.gx*this.gx+this.gy*this.gy);
+					// let startx = this.x-this.r*this.gx/gxy*sizeFac;
+					// let starty = this.y-this.r*this.gy/gxy*sizeFac;
+					// ctx.moveTo(startx,starty);
+					// let lineLength = 20*sizeFac;
+					// ctx.lineTo(startx-lineLength*this.gx/Math.sqrt(gxy), starty-lineLength*this.gy/Math.sqrt(gxy));
+				
+					// ctx.stroke();				
+				}
+			}
+
+			function randobject(num=1){
+				for(i = num; num > 0; num -=1){
+					items.push(new Item(Math.random()*(canvas.width-threshold*2) + threshold, Math.random()*(canvas.height-threshold*2) + threshold))
+				}
+			}
+
+			// items.push(new Item(canvas.width/2, canvas.height/2, 200));
+			// items[0].r = 2;
+			// items[0].color = "white";
+			// items[0].vx = 0;
+			// items[0].vy = 0;
+
+			randobject(15);
+			// items.push(new Item(canvas.width/3, canvas.height/2, 7));
+			// items.push(new Item(canvas.width/2, canvas.height/2, 6));
+			// items.push(new Item(canvas.width/2, 3*canvas.height/4, 5));
+
+
+
+			function fillscreen(){
+				if(trace){
+					ctx.fillStyle = "rgb(0,0,0,0.1)";
+				} else{
+					ctx.fillStyle = "black";
+				}
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+				ctx.font = canvas.width / 40 + "px Arial";
+				ctx.fillStyle = "rgba(255, 245, 80, 1)";
+				stritems = items.length.toString();
+				ctx.fillText(items.length, canvas.width - canvas.width*stritems.length/54 - canvas.width/40, canvas.width / 28);
+				if(pause){
+      				ctx.fillText("paused", 35*canvas.width/40, 19*canvas.height/20);
+				}
+				ctx.fillText("press space to pause.", canvas.width/40, canvas.width / 28);
+
+				let cmx = 0;
+				let cmy = 0;
+				let dm = 0;
+				for(each of items){
+					cmx += each.x*each.m;
+					cmy += each.y*each.m;
+					dm += each.m;
+				}
+				ctx.strokeStyle = "rgba(255,255,255,0.2)";
+				ctx.fillStyle = "rgba(255,255,255,0.2)";
+				ctx.beginPath();
+				ctx.arc(cmx/dm, cmy/dm, 10, 0, 2 * Math.PI);
+				// ctx.fill();
+			}
+
+			var lastTime = Date.now();
+			calcounter = 1;
+			setInterval(function(){
+				// console.log(calcounter)
+				if(calcounter == frameTicks){
+					fillscreen();
+					for(var i = 0; i < items.length; i++){
+						items[i].draw();
+					}
+					console.log(Date.now()-lastTime);
+					lastTime = Date.now();
+					calcounter = 0;
+				}
+				for(var i = 0; i < items.length; i++){
+					if(!pause){
+						items[i].calc(i);
+					}
+				}
+				for(var i = 0; i < items.length; i++){
+					if(!pause){
+						items[i].update(i);
+					}
+				}
+				calcounter++;
+			}, 1000/(4*60));
+
+			// function loop(timestamp){
+			// 	console.log(timestamp-lastTime);
+			// 	lastTime = timestamp;
+			// 	fillscreen();
+			// 	for(var i = 0; i < items.length; i++){
+			// 		items[i].draw();
+			// 		if(!pause){
+			// 			items[i].calc(i);
+			// 		}
+			// 	}
+			// 	for(var i = 0; i < items.length; i++){
+			// 		if(!pause){
+			// 			items[i].update(i);
+			// 		}
+			// 	}
+			// 	requestAnimationFrame(loop);
+			// }
+			// requestAnimationFrame(loop)
+
+
+			window.onresize = canvasResize;
+			function canvasResize() {
+			  canvas.width  = window.innerWidth;
+			  canvas.height = window.innerHeight;
+			  ctx.fillStyle = '#13171A';
+			  //ctx.fillStyle = canvascolor;
+			  ctx.fillRect(0, 0, canvas.width, canvas.height);
+			}
+
+		</script>
+	</body>
+</html>
