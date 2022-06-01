@@ -2,10 +2,17 @@
 <html style="padding:0;margin:0;">
 	<body style="padding:0;margin:0;overflow: hidden;">
 		<canvas id="screen"></canvas>
+		<script 
+			src="https://unpkg.com/gpu.js@latest/dist/gpu-browser.min.js">
+		</script>
+		<script 
+			rc="https://cdn.jsdelivr.net/npm/gpu.js@latest/dist/gpu-browser.min.js">
+		</script>
 		<script>
 			canvascolor = "rgba(19, 23, 26, 1)";
 			var canvas = document.getElementById('screen');
 			var ctx = canvas.getContext('2d');
+			const gpu = new GPU();
 
 			items = []
 
@@ -14,16 +21,24 @@
 			var mouseY = 0;
 			var pause = false;
 			var timeSwitch;
-			var trace = false;
+
+			var drawcircles = true;
+			var topology = true;
+			var trails = false;
+
+			var collision = true;
+			var gravity = true;
 
 			canvasResize();
-
 
 			// canvas.addEventListener('mousedown', onClick);
 			// canvas.addEventListener("mouseup", onRelease);
 			// canvas.addEventListener("wheel", scroll)
 			// canvas.addEventListener('mouseleave', onMouseLeave);
 			// canvas.addEventListener('mousemove', onMouseMove);
+
+			document.oncontextmenu = function(e) { e.preventDefault(); e.stopPropagation(); }
+
 			document.addEventListener('keydown', (event) => {
 			  const keyName = event.key;
 				switch(keyName){
@@ -49,8 +64,20 @@
 						pause = !pause;
 						return;
 					case "1":
-						trace = !trace;
+						drawcircles = !drawcircles;
 						return;
+					case "2":
+						topology = !topology;
+						return;
+					case "3":
+						trails = !trails;
+						return;	
+					case "4":
+						collision = !collision;
+						return;	
+					case "5":
+						gravity = !gravity;
+						return;	
 				}
 			}, false);
 
@@ -104,37 +131,30 @@
 					this.colliding = false;
 					this.newvx = 0;
 					this.newvy = 0;
-
+					this.pastPos = [];
 				}
-				calc(){
+				gravitate(){
 					// for(let i = 0; i < items.length; i++){
-					this.colliding = false;
-					this.tooMuch = false;
-					this.gx = 0;
-					this.gy = 0;
-					this.shiftx = 0;
-					this.shifty = 0;
 					for(let that of items){
 						if(this == that){
 							continue;
 						}
-						let dx = (this.x-that.x)*(this.x-that.x);
-						let dy = (this.y-that.y)*(this.y-that.y);
-						let denom = (dx + dy)*(dx + dy)
-						this.gx += that.m*2*(this.x-that.x)/denom;
-						this.gy += that.m*2*(this.y-that.y)/denom;
+						let gxgy = field(this.x,this.y,this.m, that.x,that.y,that.m);
+						this.gx+=gxgy[0];
+						this.gy+=gxgy[1];
 					}
 					this.gx*=gConst;
 					this.gy*=gConst;
 					if(Math.abs(this.gx) >= maxGsquare || Math.abs(this.gy) >= maxGsquare){ //check inscribed square first
 						let gxy = Math.sqrt(this.gx*this.gx+this.gy*this.gy);
 						if(gxy > maxG){ //check speed
-							this.gx*=maxG/gxy;
-							this.gy*=maxG/gxy;
-							this.tooMuch = true;
+							// this.gx*=maxG/gxy;
+							// this.gy*=maxG/gxy;
+							// this.tooMuch = true;
 						}
 					}
-
+				}
+				collide(){
 					for(let that of items){
 						if(this == that){
 							continue;
@@ -142,7 +162,7 @@
 						let dx = this.x-that.x;
 						let dy = this.y-that.y;
 						let rsum = this.r+that.r;
-						if(Math.abs(dx) > rsum && Math.abs(dy) > rsum){ // square check
+						if(Math.abs(dx) > rsum || Math.abs(dy) > rsum){ // square check
 							continue;
 						}
 						let dist = Math.sqrt(dx*dx + dy*dy);
@@ -153,8 +173,8 @@
 						//collision !!
 						let overlap = rsum - dist;
 						// console.log(rsum, dist, overlap);
-						this.shiftx=dx*overlap/dist;
-						this.shifty=dy*overlap/dist;
+						this.shiftx=(that.m/(this.m+that.m))*dx*overlap/dist;
+						this.shifty=(that.m/(this.m+that.m))*dy*overlap/dist;
 
 						// this.newvx=(this.m*this.vx + that.m*(that.vx + that.vx - this.vx))/(this.m+that.m);
 						// this.newvy=(this.m*this.vy + that.m*(that.vy + that.vy - this.vy))/(this.m+that.m);
@@ -174,12 +194,9 @@
 						let scalex = exit1 * ux;
 						let scaley = exit1 * uy;
 						// combine components: exit parallel to collision & original velo ortho to collision
-						this.newvx = this.vx - ux*comp1 + scalex;
-						this.newvy = this.vy - uy*comp1 + scaley;
-
+						this.newvx = 1*(this.vx - ux*comp1) + 1.00*scalex;
+						this.newvy = 1*(this.vy - uy*comp1) + 1.00*scaley;
 					}
-					// this.vx*=0.999;
-					// this.vy*=0.999;
 				}
 				update(){
 					if(this.colliding){
@@ -193,7 +210,8 @@
 					if(overx > 0){
 						// this.gx += Math.sign(this.x-canvas.width/2)/500000;
 						this.vx*=-0.8;
-						if(this.vx < 0){
+						this.vy*=0.8;
+						if(this.x > canvas.height/2){
 							this.x = canvas.width-thisthresh;
 						} else{
 							this.x = thisthresh;
@@ -202,161 +220,288 @@
 					if(overy > 0){
 						// this.gy += Math.sign(this.y-canvas.height/2)/500000;
 						this.vy*=-0.8;
-						if(this.vy < 0){
+						this.vx*=0.8;
+						if(this.y > canvas.height/2){
 							this.y = canvas.height-thisthresh;
 						} else{
 							this.y = thisthresh;
 						}
 					}
 					if(this.colliding){
-						this.vx-=0.5*this.gx;
-						this.vy-=0.5*this.gy;
+						this.vx-=0*this.gx*timeFac*200000;
+						this.vy-=0*this.gy*timeFac*200000;
 					} else{
-						this.vx-=this.gx;
-						this.vy-=this.gy;
+						this.vx-=this.gx*timeFac*200000;
+						this.vy-=this.gy*timeFac*200000;
 					}
 					this.x+=this.shiftx;
 					this.y+=this.shifty;
-					if(trace){
-						ctx.lineCap = "round";
-						ctx.strokeStyle = this.color;
-						ctx.lineWidth = this.r*Math.sqrt(this.vx*this.vx+this.vy*this.vy)/200000;
-						ctx.beginPath();
-						ctx.moveTo(this.x, this.y);
-						ctx.lineTo(this.x + this.vx*timeFac, this.y+this.vy*timeFac);
-						ctx.stroke();
-					}
+					
+					// arbitrary friction/air resist, sort of.
+					// this.vx*=1-Math.abs(this.vx)/(400000000*this.r*(this.gx+1));
+					// this.vy*=1-Math.abs(this.vy)/(400000000*this.r*(this.gy+1));
+
 					this.x+=this.vx*timeFac;
 					this.y+=this.vy*timeFac;
+
+					this.colliding = false;
+					this.tooMuch = false;
+					this.gx = 0;
+					this.gy = 0;
+					this.shiftx = 0;
+					this.shifty = 0;
+				}
+				drawField(){
+					let gradR = 250*Math.sqrt(this.m);
+					let grad = ctx.createRadialGradient(this.x, this.y, this.r, this.x, this.y, gradR);
+					let step = gradR/50;
+					grad.addColorStop(0, "rgba(255,255,255,1)");
+					for(let i = this.r; i < gradR/2; i+= step){ //i is the radius
+						// grad.addColorStop((i-this.r)/gradR, "rgba(255,255,255," + (1000*this.m/(i*i+4000)) + ")");
+						grad.addColorStop((i-this.r)/gradR, "rgba(255,255,255," + (500*this.m/(i*i+400)) + ")");
+					}
+					grad.addColorStop(1, "rgba(255,255,255,0)");
+
+					// grad.addColorStop(0, "rgba(255,255,255," + 50*this.m/(this.r*this.r) + ")");
+					// grad.addColorStop(1, "rgba(255,255,255,0)");
+					ctx.fillStyle = grad;
+					ctx.fillRect(this.x-gradR, this.y-gradR, 2*gradR, 2*gradR);
 				}
 				draw(){
-					ctx.lineWidth = lineW;
-					ctx.strokeStyle = this.color;
-					ctx.fillStyle = this.color.slice(0,-2)+"0.3)";
+					if(drawcircles){
+						ctx.lineWidth = lineW;
+						ctx.strokeStyle = this.color;
+						// ctx.fillStyle = "black"//this.color.slice(0,-2)+"0.3)";
 
-					ctx.beginPath();
-					ctx.arc(this.x, this.y, this.r*sizeFac, 0, 2 * Math.PI);
-					// if(this.tooMuch){
-					// 	ctx.fillStyle = this.color.slice(0,-2)+"0.5)";
-					// 	ctx.fill();
-					// }
-					// if(this.colliding){
-					// 	ctx.fillStyle = "white";
-					// 	// ctx.fill();
-					// }
-					if(trace){
-						ctx.fillStyle=this.color;
-					}
-					ctx.fill();
-					ctx.stroke();
+						ctx.beginPath();
+						ctx.arc(this.x, this.y, this.r*sizeFac, 0, 2 * Math.PI);
+						// if(this.tooMuch){
+						// 	ctx.fillStyle = this.color.slice(0,-2)+"0.5)";
+						// 	ctx.fill();
+						// }
+						// if(this.colliding){
+						// 	ctx.fillStyle = "white";
+						// 	// ctx.fill();
+						// }
+						// ctx.fill();
+						ctx.stroke();
+						
+
+						// ctx.beginPath();
+						// let gxy = Math.sqrt(this.gx*this.gx+this.gy*this.gy);
+						// let startx = this.x-this.r*this.gx/gxy*sizeFac;
+						// let starty = this.y-this.r*this.gy/gxy*sizeFac;
+						// ctx.moveTo(startx,starty);
+						// let lineLength = 20*sizeFac;
+						// ctx.lineTo(startx-lineLength*this.gx/Math.sqrt(gxy), starty-lineLength*this.gy/Math.sqrt(gxy));
 					
-
-					// ctx.beginPath();
-					// let gxy = Math.sqrt(this.gx*this.gx+this.gy*this.gy);
-					// let startx = this.x-this.r*this.gx/gxy*sizeFac;
-					// let starty = this.y-this.r*this.gy/gxy*sizeFac;
-					// ctx.moveTo(startx,starty);
-					// let lineLength = 20*sizeFac;
-					// ctx.lineTo(startx-lineLength*this.gx/Math.sqrt(gxy), starty-lineLength*this.gy/Math.sqrt(gxy));
-				
+						// ctx.stroke();
 					// ctx.stroke();				
+						// ctx.stroke();
+					}
+					this.pastPos.push([this.x, this.y]);
+					while(this.pastPos.length >= 0.0002/timeFac){
+						this.pastPos.shift();
+					}
+					
+					ctx.lineWidth = 2;
+					if(trails){
+						for(let i = 1; i < this.pastPos.length; i++){
+							ctx.beginPath();
+							ctx.moveTo(this.pastPos[i-1][0], this.pastPos[i-1][1]);
+							ctx.strokeStyle = this.color.slice(0,-2)+i/this.pastPos.length+")";
+							ctx.lineTo(this.pastPos[i][0], this.pastPos[i][1]);
+							ctx.stroke();
+						}
+					}
 				}
 			}
 
 			function randobject(num=1){
 				for(i = num; num > 0; num -=1){
-					items.push(new Item(Math.random()*(canvas.width-threshold*2) + threshold, Math.random()*(canvas.height-threshold*2) + threshold))
+					let tooClose = true;
+					let newx;
+					let newy;
+					do{
+						newx = Math.random()*(canvas.width-threshold*2) + threshold;
+						newy = Math.random()*(canvas.height-threshold*2) + threshold;
+						for(that of items){
+							let dx = newx-that.x;
+							let dy = newy-that.y;
+							let radius = 100;
+							if(Math.abs(dx) > radius || Math.abs(dy) > radius){ // square check
+								continue;
+							}
+							let dist = Math.sqrt(dx*dx + dy*dy);
+							if(dist > radius){ 
+								continue;
+							}
+							tooClose = true;
+						}
+					}while(false);
+					items.push(new Item(newx, newy))
 				}
 			}
 
-			// items.push(new Item(canvas.width/2, canvas.height/2, 200));
-			// items[0].r = 2;
-			// items[0].color = "white";
-			// items[0].vx = 0;
-			// items[0].vy = 0;
+			function field(x1,y1,m1, x2,y2,m2){
+				let dx = (x1-x2)*(x1-x2);
+				let dy = (y1-y2)*(y1-y2);
+				let denom = (dx + dy)*(dx + dy)
+				return [m2*2*(x1-x2)/denom, m2*2*(y1-y2)/denom]; //must be multiplied by gconst afterwards
+			}
 
-			randobject(15);
-			// items.push(new Item(canvas.width/3, canvas.height/2, 7));
-			// items.push(new Item(canvas.width/2, canvas.height/2, 6));
-			// items.push(new Item(canvas.width/2, 3*canvas.height/4, 5));
-
-
+			randobject(12);
 
 			function fillscreen(){
-				if(trace){
-					ctx.fillStyle = "rgb(0,0,0,0.1)";
-				} else{
-					ctx.fillStyle = "black";
-				}
-				ctx.fillRect(0, 0, canvas.width, canvas.height);
-				ctx.font = canvas.width / 40 + "px Arial";
-				ctx.fillStyle = "rgba(255, 245, 80, 1)";
+				ctx.font = canvas.width / 70 + "px Arial";
+				ctx.fillStyle = "rgba(255, 255, 255, 1)";
 				stritems = items.length.toString();
-				ctx.fillText(items.length, canvas.width - canvas.width*stritems.length/54 - canvas.width/40, canvas.width / 28);
-				if(pause){
-      				ctx.fillText("paused", 35*canvas.width/40, 19*canvas.height/20);
-				}
-				ctx.fillText("press space to pause.", canvas.width/40, canvas.width / 28);
+				ctx.fillText(items.length, canvas.width - canvas.width*stritems.length/54 - canvas.width/40, canvas.height / 20);
+				ctx.fillText("Keybinds:", canvas.width/50, canvas.height / 20);
+				ctx.font = canvas.width / 90 + "px Arial";
+				ctx.fillText("spacebar: pause", canvas.width/50, 3*canvas.height / 40);
+				ctx.fillText("B - slow down", canvas.width/50, 4*canvas.height / 40);
+				ctx.fillText("1 - toggle circles", canvas.width/50, 5*canvas.height / 40);
+				ctx.fillText("2 - toggle graph", canvas.width/50, 6*canvas.height / 40);
+				ctx.fillText("3 - toggle trace", canvas.width/50, 7*canvas.height / 40);
+				ctx.fillText("4 - toggle collision", canvas.width/50, 8*canvas.height / 40);
+				ctx.fillText("5 - toggle gravity", canvas.width/50, 9*canvas.height / 40);
 
-				let cmx = 0;
-				let cmy = 0;
-				let dm = 0;
-				for(each of items){
-					cmx += each.x*each.m;
-					cmy += each.y*each.m;
-					dm += each.m;
-				}
-				ctx.strokeStyle = "rgba(255,255,255,0.2)";
-				ctx.fillStyle = "rgba(255,255,255,0.2)";
-				ctx.beginPath();
-				ctx.arc(cmx/dm, cmy/dm, 10, 0, 2 * Math.PI);
+				// center of mass calculations
+				// let cmx = 0;
+				// let cmy = 0;
+				// let dm = 0;
+				// for(each of items){
+				// 	cmx += each.x*each.m;
+				// 	cmy += each.y*each.m;
+				// 	dm += each.m;
+				// }
+				// ctx.strokeStyle = "rgba(255,255,255,0.2)";
+				// ctx.fillStyle = "rgba(255,255,255,0.2)";
+				// ctx.beginPath();
+				// ctx.arc(cmx/dm, cmy/dm, 10, 0, 2 * Math.PI);
 				// ctx.fill();
 			}
+			printonce = true;
+			function topo(){
+				nImg = ctx.createImageData(canvas.width, canvas.height);
+				let lines = [1024,512,256,128,64,32,16,8,4,2,1];
+				for(let y = 0; y<canvas.height; y++){
+					for(let x = 0; x<canvas.width; x++){
+						let ghere = 0;
+						for(that of items){
+							ghere += that.m/((x-that.x)*(x-that.x) + (y-that.y)*(y-that.y));
+						}
+						ghere = ghere*100000;
+						let broke = false;
+						let i = 4*(x + y*canvas.width);
+						nImg.data[i+3] = 255;
+						for(let j = 0; j < lines.length-1; j++){
+							if((ghere < lines[j]*0.98 && ghere > lines[j+1]*1.02) || ghere > lines[0]*1.02){
+								broke = true;
+								break;
+							}
+						}
+						if(broke){
+							continue;
+						}
+						let color = ghere;
+						nImg.data[i] = 255-4000/color;
+						nImg.data[i+1] = 255-Math.abs(4000/color-170);//color+40;
+						nImg.data[i+2] = 4000/color; 
+					}
+				}
+				printonce = false;
 
-			var lastTime = Date.now();
-			calcounter = 1;
-			setInterval(function(){
-				// console.log(calcounter)
-				if(calcounter == frameTicks){
-					fillscreen();
+				return nImg;
+			}
+			
+			const settings = {
+				output: [100]
+			};
+			const testkernel = gpu.createKernel(function(x) {
+				let lines = [1024,512,256,128,64,32,16,8,4,2,1];
+				for(let y = 0; y<canvas.height; y++){
+					for(let x = 0; x<canvas.width; x++){
+						let ghere = 0;
+						for(that of items){
+							ghere += that.m/((x-that.x)*(x-that.x) + (y-that.y)*(y-that.y));
+						}
+						ghere = ghere*100000;
+						let broke = false;
+						let i = 4*(x + y*canvas.width);
+						nImg.data[i+3] = 255;
+						for(let j = 0; j < lines.length-1; j++){
+							if((ghere < lines[j]*0.98 && ghere > lines[j+1]*1.02) || ghere > lines[0]*1.02){
+								broke = true;
+								break;
+							}
+						}
+						if(broke){
+							continue;
+						}
+						let color = ghere;
+						nImg.data[i] = 255-4000/color;
+						nImg.data[i+1] = 255-Math.abs(4000/color-170);//color+40;
+						nImg.data[i+2] = 4000/color; 
+					}
+				}
+				printonce = false;
+				return nImg;
+			}, settings);
+
+			oldTime = 0;
+			function loop(timestamp){
+				if(pause){
+					ctx.font = canvas.width / 70 + "px Arial";
+					ctx.fillText("paused", 35*canvas.width/40, 19*canvas.height/20);
+					requestAnimationFrame(loop);
+					return;
+				}
+				console.log(Math.round(timestamp-oldTime));
+				oldTime = timestamp;
+				for(let iter = 0; iter < 4; iter++){
+					if(iter == 3){
+						ctx.fillStyle = "black";
+						ctx.fillRect(0, 0, canvas.width, canvas.height);
+						if(topology){
+							// for(var i = 0; i < items.length; i++){
+								// items[i].drawField();
+							// }
+							// let img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+							ctx.putImageData(topo(), 0,0);
+							// ctx.putImageData(testkernel(ctx.createImageData(canvas.width, canvas.height)), 0,0);
+							
+						}
+						fillscreen();
+						for(var i = 0; i < items.length; i++){
+							items[i].draw();
+						}
+					}
+					if(gravity){
+						for(var i = 0; i < items.length; i++){
+							items[i].gravitate(i);
+						}
+					}
+					if(collision){
+						for(var i = 0; i < items.length; i++){
+							items[i].collide(i);
+						}
+					}
 					for(var i = 0; i < items.length; i++){
-						items[i].draw();
-					}
-					console.log(Date.now()-lastTime);
-					lastTime = Date.now();
-					calcounter = 0;
-				}
-				for(var i = 0; i < items.length; i++){
-					if(!pause){
-						items[i].calc(i);
-					}
-				}
-				for(var i = 0; i < items.length; i++){
-					if(!pause){
 						items[i].update(i);
 					}
+					items = items.sort((a, b) => 0.5 - Math.random());
 				}
-				calcounter++;
-			}, 1000/(4*60));
 
-			// function loop(timestamp){
-			// 	console.log(timestamp-lastTime);
-			// 	lastTime = timestamp;
-			// 	fillscreen();
-			// 	for(var i = 0; i < items.length; i++){
-			// 		items[i].draw();
-			// 		if(!pause){
-			// 			items[i].calc(i);
-			// 		}
-			// 	}
-			// 	for(var i = 0; i < items.length; i++){
-			// 		if(!pause){
-			// 			items[i].update(i);
-			// 		}
-			// 	}
-			// 	requestAnimationFrame(loop);
-			// }
-			// requestAnimationFrame(loop)
+				requestAnimationFrame(loop);
+			}
+			
+			// setInterval(function(){
+			// 	loop();
+			// }, 1000/(4*60));
+
+			requestAnimationFrame(loop)
 
 
 			window.onresize = canvasResize;
