@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html style="padding:0;margin:0;background-color: white;">
+<html style="padding:0;margin:0;background-color: black;">
+	<meta charset="utf-8">
 	<style>
 		canvas{
 			position:fixed;
@@ -9,22 +10,25 @@
 	</style>
 	<body id = "bodbod" style="padding:0;margin:0;overflow: hidden;">
 		<canvas id="screen" style="z-index: 9;"></canvas>
-		<script 
+		<!-- <script 
 			src="https://unpkg.com/gpu.js@latest/dist/gpu-browser.min.js">
 		</script>
 		<script 
 			rc="https://cdn.jsdelivr.net/npm/gpu.js@latest/dist/gpu-browser.min.js">
-		</script>
+		</script> -->
+		<script src="gpu-browser.min.js"></script>
+		<!-- using gpu.js https://github.com/gpujs/gpu.js -->
 		<script>
 			var canvas = document.getElementById('screen');
+			const numCircles = Math.round(window.innerWidth*window.innerHeight/80000);
 			const gpu = new GPU();
 			
 			//input: positions, masses, screen size
-			const testkernel = gpu.createKernel(function(maspos, cW) {
+			const testkernel = gpu.createKernel(function(maspos, cW, numPlanets) {
 				// const lines = [1024,512,256,128,64,32,16,8,4,2,1];
 
 				let ghere = 0;
-				for(let j = 0; j<12; j++){ // 12 is number of planets
+				for(let j = 0; j<numPlanets; j++){ // 12 is number of planets
 					ghere += maspos[j][2]/((this.thread.x-maspos[j][0])*(this.thread.x-maspos[j][0]) + (this.thread.y-maspos[j][1])*(this.thread.y-maspos[j][1]));
 				}
 				ghere = ghere*100000;
@@ -32,7 +36,7 @@
 				let search = 1;
 				let i = 4*(this.thread.x + this.thread.y*cW);
 				for(let j = 0; j < 10; j++){ // 11 is lines.length
-					if((ghere < search*1.96 && ghere > search*1.02) || ghere > 1028*1.02){
+					if((ghere < search*1.96 && ghere > search*1.02) || ghere > 1028*1.02 || ghere < 0.98){
 						broke = true;
 					}
 					search*=2;
@@ -96,6 +100,8 @@
 						return;
 					case ' ':
 						pause = !pause;
+						ctx.font = canvas.width / 40 + "px Arial";
+						ctx.fillText("paused", 35*canvas.width/40, 19*canvas.height/20);
 						return;
 					case "1":
 						drawcircles = !drawcircles;
@@ -133,7 +139,7 @@
 			// }
 			const frameTicks = 4;
 			const scale = 10000000;  //more equals more distance
-			var timeFac = (0.0002*1.5/Math.log(scale))/frameTicks;
+			var timeFac = (0.0002*1.0/Math.log(scale))/frameTicks;
 			const threshold = 1;
 			const gConst = 10*scale;
 			const maxG = 100000*gConst*0.5/scale;
@@ -146,10 +152,10 @@
 				constructor(x, y, m = 0){
 					this.m = m;
 					if(this.m == 0){
-						this.m = 1.1*Math.random()+0.1;
-						this.m = 3*this.m*this.m*this.m*this.m;
+						this.m = 0.8*Math.random()+0.2;
+						this.m = 8*this.m*this.m*this.m*this.m*this.m*this.m;
 					}
-					this.r = 10*Math.cbrt(this.m);
+					this.r = 8*Math.cbrt(this.m);
 					this.x = x;
 					this.y = y;
 					this.vx = maxVo*(Math.random()-1/2);
@@ -261,8 +267,8 @@
 						}
 					}
 					if(this.colliding){
-						this.vx-=0*this.gx*timeFac*200000;
-						this.vy-=0*this.gy*timeFac*200000;
+						this.vx-=0.2*this.gx*timeFac*200000;
+						this.vy-=0.2*this.gy*timeFac*200000;
 					} else{
 						this.vx-=this.gx*timeFac*200000;
 						this.vy-=this.gy*timeFac*200000;
@@ -292,29 +298,7 @@
 
 						ctx.beginPath();
 						ctx.arc(this.x, this.y, this.r*sizeFac, 0, 2 * Math.PI);
-						// if(this.tooMuch){
-						// 	ctx.fillStyle = this.color.slice(0,-2)+"0.5)";
-						// 	ctx.fill();
-						// }
-						// if(this.colliding){
-						// 	ctx.fillStyle = "white";
-						// 	// ctx.fill();
-						// }
-						// ctx.fill();
 						ctx.stroke();
-						
-
-						// ctx.beginPath();
-						// let gxy = Math.sqrt(this.gx*this.gx+this.gy*this.gy);
-						// let startx = this.x-this.r*this.gx/gxy*sizeFac;
-						// let starty = this.y-this.r*this.gy/gxy*sizeFac;
-						// ctx.moveTo(startx,starty);
-						// let lineLength = 20*sizeFac;
-						// ctx.lineTo(startx-lineLength*this.gx/Math.sqrt(gxy), starty-lineLength*this.gy/Math.sqrt(gxy));
-					
-						// ctx.stroke();
-					// ctx.stroke();				
-						// ctx.stroke();
 					}
 					this.pastPos.push([this.x, this.y]);
 					while(this.pastPos.length >= 0.0002/timeFac){
@@ -367,10 +351,6 @@
 				return [m2*2*(x1-x2)/denom, m2*2*(y1-y2)/denom]; //must be multiplied by gconst afterwards
 			}
 
-			randobject(12);
-			// items[0].m = 500;
-			// items[0].r = 1;
-
 			function fillscreen(){
 				ctx.font = canvas.height / 40 + "px Arial";
 				ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
@@ -405,8 +385,6 @@
 			oldTime = 0;
 			function loop(timestamp){
 				if(pause){
-					ctx.font = canvas.width / 70 + "px Arial";
-					ctx.fillText("paused", 35*canvas.width/40, 19*canvas.height/20);
 					requestAnimationFrame(loop);
 					return;
 				}
@@ -422,7 +400,7 @@
 							for(each of items){
 								testdata.push([each.x,kernelCanvas.height-each.y,each.m]);
 							}
-							testkernel(testdata, canvas.width);
+							testkernel(testdata, canvas.width, numCircles);
 						} else{
 							ctx.fillStyle = "black";
 							ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -455,8 +433,10 @@
 			// 	loop();
 			// }, 1000/(4*60));
 
+			randobject(numCircles);
+			// items[0].m = 500;
+			// items[0].r = 1;
 			requestAnimationFrame(loop)
-
 
 			window.onresize = canvasResize;
 			function canvasResize() {
@@ -465,9 +445,6 @@
 			  kernelCanvas.width  = window.innerWidth;
 			  kernelCanvas.height = window.innerHeight;
 			  testkernel.setOutput([window.innerWidth,window.innerHeight]);
-			//   ctx.fillStyle = '#13171A';
-			  //ctx.fillStyle = canvascolor;
-			//   ctx.fillRect(0, 0, canvas.width, canvas.height);
 			}
 
 		</script>
