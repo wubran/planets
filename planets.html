@@ -57,6 +57,7 @@
 			items = []
 
 			var click = false
+			var selected;
 			var mouseX = 0;
 			var mouseY = 0;
 			var pause = false;
@@ -71,11 +72,11 @@
 
 			canvasResize();
 
-			// canvas.addEventListener('mousedown', onClick);
-			// canvas.addEventListener("mouseup", onRelease);
+			canvas.addEventListener('mousedown', onClick);
+			canvas.addEventListener("mouseup", onRelease);
 			// canvas.addEventListener("wheel", scroll)
-			// canvas.addEventListener('mouseleave', onMouseLeave);
-			// canvas.addEventListener('mousemove', onMouseMove);
+			canvas.addEventListener('mouseleave', onMouseLeave);
+			canvas.addEventListener('mousemove', onMouseMove);
 
 			document.oncontextmenu = function(e) { e.preventDefault(); e.stopPropagation(); }
 
@@ -121,22 +122,49 @@
 				}
 			}, false);
 
-			// function onClick(event){
-			// 	click = true;
-			// }
+			function onClick(event){
+				let inRange = [];
+				for(let i = 0; i < items.length; i++){
+					dx = event.pageX - items[i].x;
+					dy = event.pageY - items[i].y;
+					bigr = items[i].r+10;
+					if(Math.abs(dx) > bigr || Math.abs(dy) > bigr){ // square check
+						continue;
+					}
+					let dist = Math.sqrt(dx*dx + dy*dy);
+					if(dist > bigr){ 
+						continue;
+					}
+					inRange.push([i,dist]);
+				}
+				if(inRange.length == 0){
+					return;
+				}
+				inRange.sort((a, b) => a[1]-b[1]); //lowest to highest based on the dist
+				selected = items[inRange[0][0]];
+				click = true;
+			}
 
-			// function onRelease(event){
-			// 	click = false;
-			// }
+			function onRelease(event){
+				if(click){
+					selected.mouseGx = 0;
+					selected.mouseGy = 0;
+				}
+				click = false;
+			}
 
-			// function onMouseMove(event){
-			//   mouseX = event.pageX;
-			//   mouseY = event.pageY;
-			// }
+			function onMouseMove(event){
+			  mouseX = event.pageX;
+			  mouseY = event.pageY;
+			}
 
-			// function onMouseLeave(event){
-			// 	click = false;
-			// }
+			function onMouseLeave(event){
+				if(click){
+					selected.mouseGx = 0;
+					selected.mouseGy = 0;
+				}
+				click = false;
+			}
 			const frameTicks = 4;
 			const scale = 10000000;  //more equals more distance
 			var timeFac = (0.0002*1.0/Math.log(scale))/frameTicks;
@@ -171,6 +199,8 @@
 					this.newvx = 0;
 					this.newvy = 0;
 					this.pastPos = [];
+					this.mouseGx = 0;
+					this.mouseGy = 0;
 				}
 				gravitate(){
 					// for(let i = 0; i < items.length; i++){
@@ -266,6 +296,8 @@
 							this.y = thisthresh;
 						}
 					}
+					this.gx += this.mouseGx;
+					this.gy += this.mouseGy;
 					if(this.colliding){
 						this.vx-=0.2*this.gx*timeFac*200000;
 						this.vy-=0.2*this.gy*timeFac*200000;
@@ -409,6 +441,23 @@
 						for(var i = 0; i < items.length; i++){
 							items[i].draw();
 						}
+						if(click){
+							ctx.strokeStyle = "white"
+							ctx.beginPath();
+							ctx.moveTo(mouseX, mouseY);
+							ctx.lineTo(selected.x, selected.y);
+							ctx.stroke();
+						}
+					}
+					if(click){
+						let dx = selected.x - mouseX;
+						let dy = selected.y - mouseY;
+						let dist = Math.sqrt(dx*dx + dy*dy);
+						let specialdist = dist + 300;
+						selected.mouseGx = 2*specialdist*dx/(selected.m+0.5);
+						selected.mouseGy = 2*specialdist*dy/(selected.m+0.5);
+						selected.vx*=1-1/(dist/5+20*selected.m+30);
+						selected.vy*=1-1/(dist/5+20*selected.m+30);
 					}
 					if(gravity){
 						for(var i = 0; i < items.length; i++){
