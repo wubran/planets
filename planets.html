@@ -491,9 +491,9 @@
 			function canvasResize() {
 			  canvas.width  = window.innerWidth;
 			  canvas.height = window.innerHeight;
+			  testkernel.setOutput([window.innerWidth,window.innerHeight]);
 			  kernelCanvas.width  = window.innerWidth;
 			  kernelCanvas.height = window.innerHeight;
-			  testkernel.setOutput([window.innerWidth,window.innerHeight]);
 			}
 
 		</script>
