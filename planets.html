@@ -333,16 +333,16 @@
 						ctx.stroke();
 					}
 					this.pastPos.push([this.x, this.y]);
-					while(this.pastPos.length >= 0.0002/timeFac){
+
+					while(this.pastPos.length >= 0.0002*(trails?1:(Math.sqrt(0.003/this.m)))/timeFac){
 						this.pastPos.shift();
 					}
-					
-					ctx.lineWidth = 2;
-					if(trails){
+					if(drawcircles){
+						ctx.lineWidth = 2;
 						for(let i = 1; i < this.pastPos.length; i++){
 							ctx.beginPath();
 							ctx.moveTo(this.pastPos[i-1][0], this.pastPos[i-1][1]);
-							ctx.strokeStyle = this.color.slice(0,-2)+i/this.pastPos.length+")";
+							ctx.strokeStyle = this.color.slice(0,-2)+((trails?1:0.5)*i/this.pastPos.length)+")";
 							ctx.lineTo(this.pastPos[i][0], this.pastPos[i][1]);
 							ctx.stroke();
 						}
@@ -397,6 +397,7 @@
 				ctx.fillText("3 - toggle trace", canvas.width/50, 7*canvas.height / 40);
 				ctx.fillText("4 - toggle collision", canvas.width/50, 8*canvas.height / 40);
 				ctx.fillText("5 - toggle gravity", canvas.width/50, 9*canvas.height / 40);
+				ctx.fillText("mouse: drag planets", canvas.width/50, 10*canvas.height / 40);
 
 				// center of mass calculations
 				// let cmx = 0;
