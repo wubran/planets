@@ -20,7 +20,7 @@
 		<!-- using gpu.js https://github.com/gpujs/gpu.js -->
 		<script>
 			var canvas = document.getElementById('screen');
-			const numCircles = Math.round(window.innerWidth*window.innerHeight/80000);
+			const numCircles = Math.round(window.innerWidth/200);
 			const gpu = new GPU();
 			//input: positions, masses, screen size
 			const testkernel = gpu.createKernel(function(maspos, cW, numPlanets) {
@@ -42,7 +42,7 @@
 				let search = 1/9;
 				let i = 4*(this.thread.x + this.thread.y*cW);
 				for(let j = 0; j < 13; j++){ // 11 is lines.length
-					if((ghere < search*2.92 && ghere > search*1.04) || ghere > 8192*1.02 || ghere < 0.98){
+					if((ghere < search*2.90 && ghere > search*1.1) || ghere > 8192*1.02 || ghere < 0.98){
 						broke = true;
 					}
 					search*=3;
