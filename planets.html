@@ -20,7 +20,7 @@
 		<!-- using gpu.js https://github.com/gpujs/gpu.js -->
 		<script>
 			var canvas = document.getElementById('screen');
-			const numCircles = Math.round(window.innerWidth/200);
+			const numCircles = Math.round(Math.min(window.innerHeight,window.innerWidth)/100);
 			const gpu = new GPU();
 			//input: positions, masses, screen size
 			const testkernel = gpu.createKernel(function(maspos, cW, numPlanets) {
@@ -32,17 +32,20 @@
 					// ghere += maspos[j][2]/((this.thread.x-maspos[j][0])*(this.thread.x-maspos[j][0]) + (this.thread.y-maspos[j][1])*(this.thread.y-maspos[j][1]));
 					let dx = (this.thread.x-maspos[j][0])*(this.thread.x-maspos[j][0]);
 					let dy = (this.thread.y-maspos[j][1])*(this.thread.y-maspos[j][1]);
-					let denom = (dx + dy)*(dx + dy)
-					gxhere += maspos[j][2]*2*(this.thread.x-maspos[j][0])/denom
-					gyhere += maspos[j][2]*2*(this.thread.y-maspos[j][1])/denom
+					// let denom = (dx + dy)*(dx + dy);
+					// gxhere += maspos[j][2]*2*(this.thread.x-maspos[j][0])/denom;
+					// gyhere += maspos[j][2]*2*(this.thread.y-maspos[j][1])/denom;
+					let denom = 0.02*maspos[j][2]/((dx+dy)**1.5); // SO slow
+					gxhere += denom*(this.thread.x-maspos[j][0]);
+					gyhere += denom*(this.thread.y-maspos[j][1]);
 				}
 				//ghere = ghere*100000
 				let ghere = 20000000*(Math.sqrt(gxhere*gxhere + gyhere*gyhere));
 				let broke = false;
 				let search = 1/9;
 				let i = 4*(this.thread.x + this.thread.y*cW);
-				for(let j = 0; j < 13; j++){ // 11 is lines.length
-					if((ghere < search*2.90 && ghere > search*1.1) || ghere > 8192*1.02 || ghere < 0.98){
+				for(let j = 0; j < 10; j++){ // 11 is lines.length
+					if((ghere < search*2.90 && ghere > search*1.1) || ghere > 6561*1.02 || ghere < 0.98){
 						broke = true;
 					}
 					search*=3;
@@ -64,6 +67,8 @@
 					// this.color((255-color)/255, (255-Math.abs(color-170))/255, color/255, 1);
 					let strength = 1/(1+Math.exp(-ghere/20+1.5));
 					this.color(1/3+strength*(1/3+Math.sin(theta)/3), 1/3+strength*(1/3+Math.sin(theta + 2*Math.PI/3)/3), 1/3+strength*(1/3+Math.sin(theta + 4*Math.PI/3)/3), 1);
+					// this.color(1/2+strength*(1/4+Math.sin(theta)/4), strength*(1/3+Math.sin(theta)/3), 1/3+strength*(1/3+Math.sin(theta + Math.PI)/3), 1);
+
 				}
 
 				// if(ghere>1){
@@ -91,13 +96,19 @@
 			var mouseY = 0;
 			var pause = false;
 			var timeSwitch;
+			var keybindsTargetX = canvas.width/50;
 
 			var drawcircles = true;
 			var topology = true;
 			var trails = false;
+			var slopeField = true;
+			let fieldPix = 35;
+			let slopeMax = 20;
+			let fieldLines = false;
 
 			var collision = true;
 			var gravity = true;
+			var negativeG = false;
 
 			canvasResize();
 
@@ -120,7 +131,7 @@
 						masses.sort();
 						console.log(masses);
 						return;
-					case 'b':
+					case 'Shift':
 						if(timeSwitch){
 							timeFac *= 10;
 						} else{
@@ -134,20 +145,38 @@
 						ctx.fillText("paused", 35*canvas.width/40, 19*canvas.height/20);
 						return;
 					case "1":
-						drawcircles = !drawcircles;
-						return;
-					case "2":
 						topology = !topology;
 						return;
+					case "2":
+						slopeField = !slopeField;
+						return;
 					case "3":
+						fieldLines = !fieldLines;
+						return;
+					case "q":
+						drawcircles = !drawcircles;
+						return;
+					case "w":
 						trails = !trails;
-						return;	
-					case "4":
+						return;
+					case "a":
 						collision = !collision;
 						return;	
-					case "5":
+					case "s":
 						gravity = !gravity;
 						return;	
+					case "d":
+						negativeG = !negativeG;
+						return;	
+					case "Enter":
+						topology = (Math.random()<0.4)?true:false;
+						slopeField = (Math.random()<0.5)?true:false;
+						fieldLines = (Math.random()<0.40)?true:false;
+						drawcircles = (Math.random()<0.6)?true:false;
+						trails = (Math.random()<0.3)?true:false;
+						return;	
+					// default:
+						// console.log(keyName)
 				}
 			}, false);
 
@@ -183,8 +212,9 @@
 			}
 
 			function onMouseMove(event){
-			  mouseX = event.pageX;
-			  mouseY = event.pageY;
+				mouseX = event.pageX;
+				mouseY = event.pageY;
+				keybindsTargetX = canvas.width/50;
 			}
 
 			function onMouseLeave(event){
@@ -193,14 +223,16 @@
 					selected.mouseGy = 0;
 				}
 				click = false;
+				keybindsTargetX = -canvas.width/6;
 			}
 			const frameTicks = 4;
 			const scale = 10000000;  //more equals more distance
-			var timeFac = (0.0002*1.0/Math.log(scale))/frameTicks;
+			var timeFac = (0.0001/Math.log(scale))/frameTicks;
 			const threshold = 1;
-			const gConst = 10*scale;
-			const maxG = 100000*gConst*0.5/scale;
-			const maxGsquare = maxG/Math.sqrt(2);
+			const veloFac = 1;
+			const gConst = 4*scale;
+			// const maxG = 100000*gConst*0.5/scale;
+			// const maxGsquare = maxG/Math.sqrt(2);
 			const sizeFac = 1;
 			const lineW = 1.5;
 			const maxVo = 1/timeFac;
@@ -212,6 +244,7 @@
 						this.m = 0.8*Math.random()+0.2;
 						this.m = 8*this.m*this.m*this.m*this.m*this.m*this.m;
 					}
+					this.sign = Math.sign(Math.random()-1/2) // 1/3 chance to be negative
 					this.r = 8*Math.cbrt(this.m);
 					this.x = x;
 					this.y = y;
@@ -237,20 +270,25 @@
 						if(this == that){
 							continue;
 						}
-						let gxgy = field(this.x,this.y,this.m, that.x,that.y,that.m);
-						this.gx+=gxgy[0];
+						let gxgy;
+						if(negativeG){
+							gxgy = field(this.x,this.y,this.sign*this.m, that.x,that.y,(that.sign*this.sign)*that.m);
+						}else{
+							gxgy = field(this.x,this.y,this.m, that.x,that.y,that.m);
+						}
+						this.gx+=gxgy[0]; // gx gets reset to 0 every update
 						this.gy+=gxgy[1];
 					}
 					this.gx*=gConst;
 					this.gy*=gConst;
-					if(Math.abs(this.gx) >= maxGsquare || Math.abs(this.gy) >= maxGsquare){ //check inscribed square first
-						let gxy = Math.sqrt(this.gx*this.gx+this.gy*this.gy);
-						if(gxy > maxG){ //check speed
-							// this.gx*=maxG/gxy;
-							// this.gy*=maxG/gxy;
-							// this.tooMuch = true;
-						}
-					}
+					// if(Math.abs(this.gx) >= maxGsquare || Math.abs(this.gy) >= maxGsquare){ //check inscribed square first
+					// 	let gxy = Math.sqrt(this.gx*this.gx+this.gy*this.gy);
+					// 	if(gxy > maxG){ //check speed
+					// 		// this.gx*=maxG/gxy;
+					// 		// this.gy*=maxG/gxy;
+					// 		// this.tooMuch = true;
+					// 	}
+					// }
 				}
 				collide(){
 					for(let that of items){
@@ -341,8 +379,8 @@
 					// this.vx*=1-Math.abs(this.vx)/(400000000*this.r*(this.gx+1));
 					// this.vy*=1-Math.abs(this.vy)/(400000000*this.r*(this.gy+1));
 
-					this.x+=this.vx*timeFac;
-					this.y+=this.vy*timeFac;
+					this.x+=veloFac*this.vx*timeFac;
+					this.y+=veloFac*this.vy*timeFac;
 
 					this.colliding = false;
 					this.tooMuch = false;
@@ -352,21 +390,12 @@
 					this.shifty = 0;
 				}
 				draw(){
-					if(drawcircles){
-						ctx.lineWidth = lineW;
-						ctx.strokeStyle = this.color;
-						// ctx.fillStyle = "black"//this.color.slice(0,-2)+"0.3)";
-
-						ctx.beginPath();
-						ctx.arc(this.x, this.y, this.r*sizeFac, 0, 2 * Math.PI);
-						ctx.stroke();
-					}
 					this.pastPos.push([this.x, this.y]);
 
 					while(this.pastPos.length >= 0.0002*(trails?1:(Math.sqrt(0.003/this.m)))/timeFac){
 						this.pastPos.shift();
 					}
-					if(drawcircles){
+					if(drawcircles || trails){
 						ctx.lineWidth = 2;
 						for(let i = 1; i < this.pastPos.length; i++){
 							ctx.beginPath();
@@ -374,6 +403,86 @@
 							ctx.strokeStyle = this.color.slice(0,-2)+((trails?1:0.5)*i/this.pastPos.length)+")";
 							ctx.lineTo(this.pastPos[i][0], this.pastPos[i][1]);
 							ctx.stroke();
+						}
+					}
+					if(drawcircles){
+						ctx.lineWidth = lineW;
+						ctx.strokeStyle = this.color;
+						ctx.fillStyle = "black"//this.color.slice(0,-2)+"0.3)";
+
+						ctx.beginPath();
+						ctx.arc(this.x, this.y, this.r*sizeFac, 0, 2 * Math.PI);
+						ctx.stroke();
+						ctx.fill();
+					}
+					const labelRadius = Math.max(canvas.height, canvas.width)/10;
+					let dx = this.x - mouseX;
+					let dy = this.y - mouseY;
+					
+					if(Math.abs(dx) > labelRadius || Math.abs(dy) > labelRadius){ // square check
+						return;
+					}
+					if(dx*dx + dy*dy < labelRadius*labelRadius){ //mouse is close
+						ctx.fillStyle = "white";
+						ctx.fillText("m "+Math.round(1000*this.m*(negativeG?this.sign:1))/1000, this.x + this.r, this.y - this.r);
+						// ctx.fillText("m="+Math.round(1000*this.m*this.sign)/1000, this.x + this.r, this.y - this.r);
+					}
+				}
+				drawFieldLines(){
+					// if(this.m < 0){
+					// 	return;
+					// }
+					const constWhiteProportion = 0.3;
+					const linesPerItem = 5;
+					const totalMass = items.reduce(
+						(prev, curr) => prev + curr.m,0
+					); // REMOVE MATH.ABS
+					let linesPerMass = linesPerItem*items.length/totalMass;
+					ctx.lineWidth=1;
+					let lineNumber = Math.round(linesPerMass*this.m);
+					let randomOffset = 0//2*Math.random()*Math.PI/lineNumber;
+					for(let j = 0; j<lineNumber; j++){ // for each line
+						let linex = this.x + this.r*Math.cos(randomOffset+j*2*Math.PI/lineNumber);
+						let liney = this.y + this.r*Math.sin(randomOffset+j*2*Math.PI/lineNumber);
+						for(let k = 1; k<256; k++){ // for each line segment
+							let gx = 0;
+							let gy = 0;
+							let density = 0;
+							let failed = false;
+							for(let l = 0; l<items.length; l++){ //for each planet
+								let temp = field(linex, liney, 0, items[l].x, items[l].y, items[l].m*(negativeG?(this.sign*items[l].sign):1));
+								gx += temp[0];
+								gy += temp[1];
+								let rNoSqrt = (linex-items[l].x)*(linex-items[l].x) + (liney-items[l].y)*(liney-items[l].y); // missing sqrt
+								density += items[l].m/rNoSqrt; // REMOVE MATH.ABS LATER
+								if(negativeG && (this.sign*items[l].sign)==-1 && rNoSqrt<items[l].r*items[l].r){ //arbitrary very small number
+									failed = true;
+									break;
+								}
+							}
+							if(failed){
+								break;
+							}
+							gx*=1000;
+							gy*=1000;
+							let gg = Math.sqrt(gx*gx+gy*gy);
+							let squish = (slopeMax-slopeMax/(2**(gg))); // 1-2^-x graph
+							let whiteness = (Math.min(50+squish*5,255*(1-constWhiteProportion))+255*constWhiteProportion)*(1-k/256);
+							ctx.strokeStyle="rgba(255,255,255,"+whiteness/255+")";
+							ctx.beginPath();
+							ctx.moveTo(linex, liney);
+							density*=1000;
+							// console.log(density)
+							linex+=10*gx*(1/(density));
+							liney+=10*gy*(1/(density));
+							// console.log(linex,liney)
+							ctx.lineTo(linex, liney);
+							ctx.stroke();
+
+							if(linex<0 || liney<0 || linex > canvas.width || liney > canvas.height){
+								break;
+							}
+							// console.log(k)
 						}
 					}
 				}
@@ -409,39 +518,79 @@
 				let dx = (x1-x2)*(x1-x2);
 				let dy = (y1-y2)*(y1-y2);
 				let denom = (dx + dy)*(dx + dy)
-				return [m2*2*(x1-x2)/denom, m2*2*(y1-y2)/denom]; //must be multiplied by gconst afterwards
+				// return [m2*2*(x1-x2)/denom, m2*2*(y1-y2)/denom]; //must be multiplied by gconst afterwards
+				return [m2*(x1-x2)/((dx+dy)**1.5), m2*(y1-y2)/((dx+dy)**1.5)];
 			}
-
-			function fillscreen(){
+			let keybindsEaseX = keybindsTargetX;
+			function fillscreen(timestamp){
 				ctx.font = canvas.height / 40 + "px Arial";
 				ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
 				stritems = items.length.toString();
 				ctx.fillText(items.length, canvas.width - canvas.width*stritems.length/54 - canvas.width/40, canvas.height / 20);
-				ctx.fillText("Keybinds:", canvas.width/50, canvas.height / 20);
+				
+				keybindsEaseX += 0.2*(keybindsTargetX-keybindsEaseX)
+				ctx.fillText("Keybinds:", keybindsEaseX, canvas.height / 20);
 				ctx.font = canvas.height / 50 + "px Arial";
-				ctx.fillText("spacebar: pause", canvas.width/50, 3*canvas.height / 40);
-				ctx.fillText("B - slow down", canvas.width/50, 4*canvas.height / 40);
-				ctx.fillText("1 - toggle circles", canvas.width/50, 5*canvas.height / 40);
-				ctx.fillText("2 - toggle graph", canvas.width/50, 6*canvas.height / 40);
-				ctx.fillText("3 - toggle trace", canvas.width/50, 7*canvas.height / 40);
-				ctx.fillText("4 - toggle collision", canvas.width/50, 8*canvas.height / 40);
-				ctx.fillText("5 - toggle gravity", canvas.width/50, 9*canvas.height / 40);
-				ctx.fillText("mouse: drag planets", canvas.width/50, 10*canvas.height / 40);
+				const controls = [
+					0,
+					["mouse","move planets"],
+					["spacebar","pause"],
+					["shift","slow down"],
+					0,
+					["1","toggle topographical map"],
+					["2","toggle slope field"],
+					["3","toggle field lines"],
+					0,
+					["q","toggle circles"],
+					["w","toggle trace"],
+					0,
+					["a","toggle collision"],
+					["s","toggle gravity"],
+					["d","toggle negative gravity"],
+					0,
+					["enter", "randomize!"]
+				]
+				ctx.strokeStyle = "rgba(255,255,255,0.2)";
+				ctx.lineWidth = 4;
+				for(let i = 0; i<controls.length; i++){
+					if(controls[i] == 0){
+						ctx.beginPath();
+						ctx.moveTo(keybindsEaseX,(i+2.75)*canvas.height / 40);
+						ctx.lineTo(keybindsEaseX+canvas.width/7,(i+2.75)*canvas.height / 40);
+						ctx.stroke();
+						continue;
+					}
+					ctx.fillText(controls[i][0]+" - "+controls[i][1], keybindsEaseX, (i+3)*canvas.height / 40);
+				}
+				
 
-				// center of mass calculations
-				// let cmx = 0;
-				// let cmy = 0;
-				// let dm = 0;
-				// for(each of items){
-				// 	cmx += each.x*each.m;
-				// 	cmy += each.y*each.m;
-				// 	dm += each.m;
-				// }
-				// ctx.strokeStyle = "rgba(255,255,255,0.2)";
-				// ctx.fillStyle = "rgba(255,255,255,0.2)";
-				// ctx.beginPath();
-				// ctx.arc(cmx/dm, cmy/dm, 10, 0, 2 * Math.PI);
-				// ctx.fill();
+				if(slopeField){
+					// slope field
+					ctx.lineWidth=1;
+					for(let arrowx = 0; arrowx < canvas.width; arrowx+=fieldPix){
+						for(let arrowy = 0; arrowy < canvas.height; arrowy+=fieldPix){
+							let gx = 0;
+							let gy = 0;
+							for(let i = 0; i<items.length; i++){
+								let temp = field(arrowx, arrowy, 0, items[i].x, items[i].y, items[i].m*(negativeG?(items[i].sign):1));
+								gx += temp[0];
+								gy += temp[1];
+							}
+							gx*=1000;
+							gy*=1000;
+							let gg = Math.sqrt(gx*gx+gy*gy);
+							let squish = (slopeMax-slopeMax/(4**(gg))); // 1-2^-x graph
+							gx = squish*(gx/gg);
+							gy = squish*(gy/gg);
+							let whiteness = squish*5+130;
+							ctx.strokeStyle="rgb("+(whiteness)+","+(whiteness)+","+whiteness+")";
+							ctx.beginPath();
+							ctx.moveTo(arrowx-gx, arrowy-gy);
+							ctx.lineTo(arrowx+gx, arrowy+gy);
+							ctx.stroke();
+						}
+					}
+				}
 			}
 			
 			oldTime = 0;
@@ -459,15 +608,27 @@
 						ctx.clearRect(0, 0, canvas.width, canvas.height);
 						if(topology){
 							let testdata = [];
-							for(each of items){
-								testdata.push([each.x,kernelCanvas.height-each.y,each.m]);
+							if(negativeG){
+								for(each of items){
+									testdata.push([each.x,kernelCanvas.height-each.y,each.sign*each.m]);
+								}
+							} else{
+								for(each of items){
+									testdata.push([each.x,kernelCanvas.height-each.y,each.m]);
+								}
 							}
-							testkernel(testdata, canvas.width, numCircles);
+							// console.log(items, testdata);
+							testkernel(testdata, canvas.width, items.length);
 						} else{
 							ctx.fillStyle = "black";
 							ctx.fillRect(0, 0, canvas.width, canvas.height);
 						}
-						fillscreen();
+						fillscreen(timestamp);
+						if(fieldLines){
+							for(var i = 0; i < items.length; i++){
+								items[i].drawFieldLines();
+							}
+						}
 						for(var i = 0; i < items.length; i++){
 							items[i].draw();
 						}
@@ -519,11 +680,12 @@
 
 			window.onresize = canvasResize;
 			function canvasResize() {
-			  canvas.width  = window.innerWidth;
-			  canvas.height = window.innerHeight;
-			  testkernel.setOutput([window.innerWidth,window.innerHeight]);
-			  kernelCanvas.width  = window.innerWidth;
-			  kernelCanvas.height = window.innerHeight;
+				canvas.width  = window.innerWidth;
+				canvas.height = window.innerHeight;
+				testkernel.setOutput([window.innerWidth,window.innerHeight]);
+				kernelCanvas.width  = window.innerWidth;
+				kernelCanvas.height = window.innerHeight;
+				keybindsTargetX = canvas.width/50;
 			}
 
 		</script>
