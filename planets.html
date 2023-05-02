@@ -28,22 +28,24 @@
 
 				let gxhere = 0;
 				let gyhere = 0;
+				let floatThreadX = this.thread.x + 0.0;
+				let floatThreadY = this.thread.y + 0.0;
 				for(let j = 0; j<numPlanets; j++){ // 12 is number of planets
-					// ghere += maspos[j][2]/((this.thread.x-maspos[j][0])*(this.thread.x-maspos[j][0]) + (this.thread.y-maspos[j][1])*(this.thread.y-maspos[j][1]));
-					let dx = (this.thread.x-maspos[j][0])*(this.thread.x-maspos[j][0]);
-					let dy = (this.thread.y-maspos[j][1])*(this.thread.y-maspos[j][1]);
+					// ghere += maspos[j][2]/((floatThreadX-maspos[j][0])*(floatThreadX-maspos[j][0]) + (floatThreadY-maspos[j][1])*(floatThreadY-maspos[j][1]));
+					let dx = (floatThreadX-maspos[j][0])*(floatThreadX-maspos[j][0]);
+					let dy = (floatThreadY-maspos[j][1])*(floatThreadY-maspos[j][1]);
 					// let denom = (dx + dy)*(dx + dy);
-					// gxhere += maspos[j][2]*2*(this.thread.x-maspos[j][0])/denom;
-					// gyhere += maspos[j][2]*2*(this.thread.y-maspos[j][1])/denom;
+					// gxhere += maspos[j][2]*2*(floatThreadX-maspos[j][0])/denom;
+					// gyhere += maspos[j][2]*2*(floatThreadY-maspos[j][1])/denom;
 					let denom = 0.02*maspos[j][2]/((dx+dy)**1.5); // SO slow
-					gxhere += denom*(this.thread.x-maspos[j][0]);
-					gyhere += denom*(this.thread.y-maspos[j][1]);
+					gxhere += denom*(floatThreadX-maspos[j][0]);
+					gyhere += denom*(floatThreadY-maspos[j][1]);
 				}
 				//ghere = ghere*100000
 				let ghere = 20000000*(Math.sqrt(gxhere*gxhere + gyhere*gyhere));
 				let broke = false;
 				let search = 1/9;
-				let i = 4*(this.thread.x + this.thread.y*cW);
+				let i = 4*(floatThreadX + floatThreadY*cW);
 				for(let j = 0; j < 10; j++){ // 11 is lines.length
 					if((ghere < search*2.90 && ghere > search*1.1) || ghere > 6561*1.02 || ghere < 0.98){
 						broke = true;
