@@ -12,8 +12,8 @@
 		<canvas id="screen" style="z-index: 9;"></canvas>
 		<!-- <script 
 			src="https://unpkg.com/gpu.js@latest/dist/gpu-browser.min.js">
-		</script>
-		<script 
+		</script> -->
+		<!-- <script 
 			rc="https://cdn.jsdelivr.net/npm/gpu.js@latest/dist/gpu-browser.min.js">
 		</script> -->
 		<script src="gpu-browser.min.js"></script>
@@ -21,7 +21,7 @@
 		<script>
 			var canvas = document.getElementById('screen');
 			const numCircles = Math.round(Math.min(window.innerHeight,window.innerWidth)/100);
-			const gpu = new GPU();
+			const gpu = new GPU.GPU();
 			//input: positions, masses, screen size
 			const testkernel = gpu.createKernel(function(maspos, cW, numPlanets) {
 				// const lines = [1024,512,256,128,64,32,16,8,4,2,1];
